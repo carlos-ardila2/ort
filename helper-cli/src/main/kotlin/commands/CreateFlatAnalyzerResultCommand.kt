@@ -24,6 +24,7 @@ import com.fasterxml.jackson.module.kotlin.readValue
 
 import com.github.ajalt.clikt.core.CliktCommand
 import com.github.ajalt.clikt.parameters.options.convert
+import com.github.ajalt.clikt.parameters.options.default
 import com.github.ajalt.clikt.parameters.options.option
 import com.github.ajalt.clikt.parameters.options.required
 import com.github.ajalt.clikt.parameters.types.file
@@ -41,15 +42,22 @@ import org.ossreviewtoolkit.model.PackageReference
 import org.ossreviewtoolkit.model.Project
 import org.ossreviewtoolkit.model.RemoteArtifact
 import org.ossreviewtoolkit.model.Repository
+import org.ossreviewtoolkit.model.ResolvedPackageCurations
 import org.ossreviewtoolkit.model.Scope
 import org.ossreviewtoolkit.model.VcsInfo
 import org.ossreviewtoolkit.model.VcsType
 import org.ossreviewtoolkit.model.config.Excludes
+import org.ossreviewtoolkit.model.config.OrtConfiguration
 import org.ossreviewtoolkit.model.config.RepositoryConfiguration
 import org.ossreviewtoolkit.model.config.ScopeExclude
 import org.ossreviewtoolkit.model.config.ScopeExcludeReason
 import org.ossreviewtoolkit.model.orEmpty
+import org.ossreviewtoolkit.model.utils.addPackageCurations
+import org.ossreviewtoolkit.plugins.packagecurationproviders.api.PackageCurationProviderFactory
+import org.ossreviewtoolkit.plugins.packagecurationproviders.api.SimplePackageCurationProvider
 import org.ossreviewtoolkit.utils.common.expandTilde
+import org.ossreviewtoolkit.utils.ort.ORT_CONFIG_FILENAME
+import org.ossreviewtoolkit.utils.ort.ortConfigDirectory
 
 internal class CreateFlatAnalyzerResultCommand : CliktCommand(
     "A command which turns a simple definition file into an analyzer result."
@@ -69,6 +77,14 @@ internal class CreateFlatAnalyzerResultCommand : CliktCommand(
         .file(mustExist = false, canBeFile = true, canBeDir = false, mustBeWritable = false, mustBeReadable = false)
         .convert { it.absoluteFile.normalize() }
         .required()
+
+    private val configFile by option(
+        "--config",
+        help = "The path to the ORT configuration file that configures the scan results storage."
+    ).convert { it.expandTilde() }
+        .file(mustExist = true, canBeFile = true, canBeDir = false, mustBeWritable = false, mustBeReadable = true)
+        .convert { it.absoluteFile.normalize() }
+        .default(ortConfigDirectory.resolve(ORT_CONFIG_FILENAME))
 
     override fun run() {
         val definitionFile = FileFormat.forFile(simpleDefinitionFile).mapper.readValue<SimpleDefinitionFile>(
@@ -94,6 +110,12 @@ internal class CreateFlatAnalyzerResultCommand : CliktCommand(
             )
         )
 
+        val ortConfig = OrtConfiguration.load(emptyMap(), configFile)
+
+        val packageCurationProviders = buildList {
+            addAll(PackageCurationProviderFactory.create(ortConfig.packageCurationProviders))
+        }
+
         val ortResult = OrtResult(
             analyzer = AnalyzerRun.EMPTY.copy(
                 result = AnalyzerResult(
@@ -111,7 +133,7 @@ internal class CreateFlatAnalyzerResultCommand : CliktCommand(
                     )
                 )
             )
-        )
+        ).addPackageCurations(packageCurationProviders)
 
         writeOrtResult(ortResult, ortFile)
     }
