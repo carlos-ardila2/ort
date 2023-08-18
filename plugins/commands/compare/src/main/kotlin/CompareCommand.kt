@@ -79,6 +79,7 @@ class CompareCommand : OrtCommand(
                 val replacements = buildMap {
                     if (ignoreTime) {
                         put("""^(\s+(?:start|end)_time:) "[^"]+"$""", "$1 \"${Instant.EPOCH}\"")
+                        put("""^(\s+timestamp:) "[^"]+"$""", "$1 \"${Instant.EPOCH}\"")
                     }
 
                     if (ignoreEnvironment) {
